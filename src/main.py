@@ -16,6 +16,16 @@ brain=Brain()
 left_motor = Motor(Ports.PORT1, GearSetting.RATIO_18_1, True)
 right_motor = Motor(Ports.PORT10, GearSetting.RATIO_18_1, False)
 arm_motor = Motor(Ports.PORT8, GearSetting.RATIO_18_1,True)
+Wheel_Diameter = 4
+CIRCUMFERENCE = math.pi * Wheel_Diameter  
+RowDistacnce1 = 12
+RowDistance2 = 24
+RowDistance3 = 36
+ColumnDistance1 = 8
+ColumnDistance2 = 18
+ColumnDistance3 = 30
+
+imu = Inertial(Ports.PORT5)
 
 ## define the colors; we'll use the default sensitivity of 3.0
 ## you don't have to retrain the camera to use different sensitivities; you can
@@ -38,28 +48,74 @@ Fruit = [ORANGE_FRUIT, LIME, LEMON]
 Held_Fruit_Type = "No Fruit"
 Held_Fruit_Num = 0
 Max_Fruit = 4
+Trees_Checked = 0
 
 ROBOT_IDLE = 0
-ROBOT_SEARCHING = 1
-ROBOT_SEARCH_SPECIFIC = 2
-ROBOT_CENTERING = 3
-ROBOT_DRIVING_VISION = 4
-ROBOT_GRAB_FRUIT = 5
-ROBOT_SEARCH_BUCKET = 6
-ROBOT_B_CENTERING = 7
-ROBOT_DRIVING_BUCKET = 8
-ROBOT_DUMP_FRUIT = 9
+ROBOT_DRIVING_ORCHARD = 1
+ROBOT_SEARCHING = 2
+ROBOT_SEARCH_SPECIFIC = 3
+ROBOT_CENTERING = 4 
+ROBOT_DRIVING_FRUIT = 5
+ROBOT_GRAB_FRUIT = 6
+ROBOT_DRIVING_BACK = 7
+ROBOT_SEARCH_BUCKET = 8
+ROBOT_B_CENTERING = 9
+ROBOT_DRIVING_BUCKET = 10
+ROBOT_DUMP_FRUIT = 11
 Robot_State = 0
 
+def go_inches_straight(distance, speed):
+    left_motor.spin_for(FORWARD, distance*5/CIRCUMFERENCE, TURNS, velocity=speed*5, wait=False) # wait = blocking 
+
+    right_motor.spin_for(FORWARD, distance*5/CIRCUMFERENCE, TURNS, velocity=speed*5, wait=True)
+    
 def handleButtonPress():
     global Robot_State
     if(Robot_State == ROBOT_IDLE):
-        print('IDLE -> SEARCHING')
-        Robot_State = ROBOT_SEARCHING
+        print("DRIVING TO TREE")
+        Robot_State = ROBOT_DRIVING_ORCHARD
 
 button5 = Bumper(brain.three_wire_port.g)
 button5.pressed(handleButtonPress)
 Robot_State = ROBOT_IDLE
+
+AngTolerance = 1
+imu.calibrate()
+while imu.is_calibrating():sleep(50, MSEC)
+imu.reset_heading()
+
+# Rotate until in target, with shortest path
+def rotate(target_angle):
+    while -AngTolerance <= angle_difference <= AngTolerance:
+        current_heading = imu.heading()
+        angle_difference = target_angle - current_heading
+
+        # Adjust for circular nature of headings
+        if angle_difference > 180:
+            angle_difference -= 360
+        elif angle_difference < -180:
+            angle_difference += 360
+
+        # Check if within the soft limit
+          # Stop rotating if within tolerance
+
+        # Determine rotation direction
+        if angle_difference > 0:
+            # Rotate clockwise
+            left_motor.spin(FORWARD)
+            right_motor.spin(REVERSE)
+        else:
+            # Rotate counter-clockwise
+            left_motor.spin(REVERSE)
+            right_motor.spin(FORWARD)
+
+        print(current_heading)  # For debugging
+        sleep(50)  # Small delay for responsiveness
+
+    # Stop motors once the target is reached
+    left_motor.stop()
+    right_motor.stop()
+
 
 def handleObjects():
     global Held_Fruit_Type
@@ -133,8 +189,59 @@ while True:
         right_motor.stop()
         arm_motor.spin_to_position(140 * 5,30)
 
-
-                  
+    while Robot_State == ROBOT_DRIVING_ORCHARD:
+        arm_motor.spin_to_position(140 * 5 ,10)
+        if Trees_Checked < 3:
+            #drive to row 1
+            IN_ROW = 1
+            go_inches_straight(RowDistacnce1,30)
+            #turn to 270 degrees
+            rotate(270)
+            if Trees_Checked == 0:
+                #drive to tree 1
+                go_inches_straight(6,30)
+            elif Trees_Checked == 1:
+                #drive to tree 2
+                go_inches_straight(18,30)
+            elif Trees_Checked == 2:
+                #drive to tree 3
+                go_inches_straight(30,30)
+        elif Trees_Checked < 6:
+            #drive to row 2 
+            go_inches_straight(RowDistance2,30)
+            IN_ROW = 2
+            #turn 90 degrees
+            rotate(270)
+            if Trees_Checked == 3:
+                #drive to tree 4
+                go_inches_straight(ColumnDistance1,30)
+            elif Trees_Checked == 4:
+                #drive to tree 5
+                go_inches_straight(ColumnDistance2,30)
+            elif Trees_Checked == 5:
+                #drive to tree 6
+                go_inches_straight(ColumnDistance3,30)
+        elif Trees_Checked < 9:
+            #drive to row 3 
+            go_inches_straight(RowDistance3,30)
+            IN_ROW = 3
+            #turn 90 degrees
+            rotate(270)
+            if Trees_Checked == 6:
+                #drive to tree 7
+                go_inches_straight(ColumnDistance1,30)
+            elif Trees_Checked == 7:
+                #drive to tree 8
+                go_inches_straight(ColumnDistance2,30)
+            elif Trees_Checked == 8:
+                #drive to tree 9
+                go_inches_straight(ColumnDistance3,30)
+        else:
+            Robot_State = ROBOT_IDLE
+            print("YAY YOU GOT ALL THE FRUIT")
+        rotate(0)
+        Robot_State = ROBOT_SEARCHING
+     
     while Robot_State == ROBOT_SEARCHING:
         left_motor.spin(FORWARD, 30)
         right_motor.spin(REVERSE, 30)
@@ -142,8 +249,7 @@ while True:
             objects = VisionF.take_snapshot(items)
             if objects and Robot_State == ROBOT_SEARCHING:
                 handleObjects()      
-    offset = 15
-    Center_Camera = Camera_ResolutionX / 2
+
 
 
     while Robot_State == ROBOT_SEARCH_SPECIFIC:
@@ -153,6 +259,9 @@ while True:
         if objects and Robot_State == ROBOT_SEARCH_SPECIFIC:
             handleObjects() 
 
+
+    offset = 15
+    Center_Camera = Camera_ResolutionX / 2
 
     while Robot_State == ROBOT_CENTERING:
         objects = VisionF.take_snapshot(Held_Fruit_Type)
@@ -167,11 +276,11 @@ while True:
             right_motor.stop()
             left_motor.stop()
 
-            Robot_State = ROBOT_DRIVING_VISION
+            Robot_State = ROBOT_DRIVING_FRUIT
         wait(50)
 
 
-    while Robot_State == ROBOT_DRIVING_VISION:
+    while Robot_State == ROBOT_DRIVING_FRUIT:
         FRUIT_TARGET_HEIGHT = 205
         FRUIT_TARGET_SIDE = Center_Camera
         objects = VisionF.take_snapshot(Held_Fruit_Type)
@@ -192,7 +301,7 @@ while True:
 
     while Robot_State == ROBOT_GRAB_FRUIT:
         Initial_Torque = arm_motor.torque()    
-        Torque_Diff = .25 
+        Torque_Diff = .25 #change when have final torque measurements
         while Initial_Torque < Initial_Torque + Torque_Diff :
             arm_motor.spin(REVERSE,15)
         print("TOUCHED FRUIT YAY")
@@ -205,6 +314,33 @@ while True:
             Robot_State = ROBOT_SEARCH_SPECIFIC
         else:
             Robot_State = ROBOT_SEARCH_BUCKET
+    
+
+    while Robot_State == ROBOT_DRIVING_BACK:
+        if Trees_Checked == 8 or 5 or 2:
+            rotate(270)
+        else:
+            rotate(90)
+        #drive until hit wall
+        ...
+        go_inches_straight(-6,30)
+        rotate(180)
+        if IN_ROW == 3:
+            go_inches_straight(RowDistance3,30)
+        elif IN_ROW == 2:
+            go_inches_straight(RowDistance2,30)
+        elif IN_ROW == 1:
+            go_inches_straight(RowDistacnce1,30)
+        IN_ROW = 0
+        if Trees_Checked == 8 or 5 or 2:
+            rotate(90)
+        else:
+            rotate(270)
+        go_inches_straight(ColumnDistance2,30)
+        rotate(225)
+        Robot_State = ROBOT_SEARCH_BUCKET
+            
+        
 
 
     while Robot_State == ROBOT_SEARCH_BUCKET:
@@ -222,7 +358,7 @@ while True:
     while Robot_State == ROBOT_B_CENTERING:
         HeldObject = VisionB.take_snapshot(Held_Fruit_Type)
         G_Fruit = VisionB. take_snapshot(GRAPEFRUIT)
-        if VisionB.largest_object.centerX > Center_Camera + offset: #half of the camera resolution
+        if VisionB.largest_object().centerX > Center_Camera + offset: #half of the camera resolution
             right_motor.spin(REVERSE,30)
             left_motor.spin(FORWARD, 30)
         elif VisionB.largest_object().centerX < Center_Camera - offset: #half of the camera resolution
@@ -236,7 +372,7 @@ while True:
         wait(500)
 
     while Robot_State == ROBOT_DRIVING_BUCKET:
-        FRUIT_TARGET_HEIGHT = 205
+        FRUIT_TARGET_HEIGHT = 180
         FRUIT_TARGET_SIDE = Center_Camera
         objects = VisionB.take_snapshot(Held_Fruit_Type)
         if VisionB.largest_object().height < FRUIT_TARGET_HEIGHT: #change to desired number to change distance away
@@ -254,11 +390,18 @@ while True:
             Robot_State = ROBOT_DUMP_FRUIT
 
     while Robot_State == ROBOT_DUMP_FRUIT:
-        arm_motor.spin_to_position(200 * 5, DEGREES, 20)
+        #spin 180 degrees
+        rotate(180)
+        arm_motor.spin_to_position(0 * 5, DEGREES, 20)
         print("FRUIT DUMPED")
         Held_Fruit_Num = 0
         Held_Fruit_Type = "No Fruit"
-        Robot_State = ROBOT_SEARCHING
-
-
-        
+        #turn 90 degrees clockwise
+        rotate(90)
+        #drive  until hit wall
+        ...
+        #backup
+        go_inches_straight(-6,30)
+        #turn 90 degrees counterclockwise
+        rotate(0)
+        Robot_State = ROBOT_DRIVING_ORCHARD
